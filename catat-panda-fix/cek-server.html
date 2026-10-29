@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cek Server Catat Panda</title>
+<style>
+  :root{color-scheme:dark light;--bg:#0B1220;--s1:#121B2E;--line:#243350;--tx:#E8EEF8;--mut:#8C9AB3;--ok:#5AA9FF;--bad:#FF7B6F;--warn:#F2B84B}
+  @media (prefers-color-scheme:light){:root{--bg:#EEF2F9;--s1:#fff;--line:#D6DEEB;--tx:#111B2E;--mut:#5B6880;--ok:#1F6FD1;--bad:#D6453A;--warn:#B07A12}}
+  *{box-sizing:border-box}
+  body{margin:0;padding:22px 16px 40px;background:var(--bg);color:var(--tx);font:15px/1.5 "DM Sans",system-ui,-apple-system,"Segoe UI",sans-serif;max-width:560px;margin-inline:auto}
+  h1{font-size:20px;margin:0 0 4px}
+  p.sub{margin:0 0 18px;color:var(--mut);font-size:13px}
+  label{display:block;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:14px 0 6px}
+  input{width:100%;padding:12px 13px;border-radius:12px;border:1px solid var(--line);background:var(--s1);color:var(--tx);font:inherit;font-size:14px}
+  input:focus{outline:2px solid var(--ok);outline-offset:1px}
+  .row{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+  button{flex:1 1 160px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--s1);color:var(--tx);font:inherit;font-weight:700;cursor:pointer}
+  button.primary{background:var(--ok);border-color:var(--ok);color:#061A33}
+  button:disabled{opacity:.55;cursor:default}
+  #out{margin-top:18px;border:1px solid var(--line);border-radius:14px;background:var(--s1);padding:14px;font-size:14px;white-space:pre-wrap;display:none}
+  #out.show{display:block}
+  .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+  code{font-family:"DM Mono",ui-monospace,Menlo,monospace;font-size:12px;word-break:break-all}
+  .note{margin-top:22px;color:var(--mut);font-size:12px;border-top:1px solid var(--line);padding-top:14px}
+</style>
+</head>
+<body>
+<h1>Cek Server Catat Panda</h1>
+<p class="sub">Halaman ini hanya mengecek, tidak mengubah apa pun di spreadsheet.</p>
+
+<label for="url">Alamat Web App (…/exec)</label>
+<input id="url" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
+
+<label for="tok">Kode rahasia (TOKEN)</label>
+<input id="tok" type="password" autocomplete="off" placeholder="Sama dengan TOKEN di Code.gs">
+
+<div class="row">
+  <button class="primary" id="ping">Cek versi server</button>
+  <button id="data">Cek data &amp; kolom</button>
+</div>
+
+<div id="out"></div>
+
+<div class="note">
+  <b>Cara baca hasilnya:</b><br>
+  • <span class="ok">v2.0</span> = server sudah versi baru, tombol <b>Ubah</b> akan bekerja.<br>
+  • <span class="bad">versi lama</span> / <code>aksi tidak dikenal</code> = Web App masih menjalankan kode lama. Di Apps Script: <b>Deploy → Manage deployments → ikon pensil → Version: New version → Deploy</b>.<br>
+  • <span class="bad">Kode rahasia ditolak</span> = isi <code>TOKEN</code> di Code.gs belum sama dengan yang dipakai aplikasi.
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var out = $('out');
+
+  function show(html) { out.className = 'show'; out.innerHTML = html; }
+
+  function post(payload) {
+    var url = $('url').value.trim(), tok = $('tok').value;
+    if (!/^https:\/\/script\.google\.com\/(a\/macros\/[^/]+\/)?macros\/s\/[^/]+\/exec$/.test(url)) {
+      throw new Error('Alamat harus berbentuk https://script.google.com/macros/s/…/exec');
+    }
+    if (!tok) throw new Error('Isi kode rahasia dulu.');
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ token: tok }, payload)),
+      redirect: 'follow'
+    }).then(function (res) { return res.text(); })
+      .then(function (t) { try { return JSON.parse(t); } catch (e) { var er = new Error('Balasan bukan JSON. Biasanya berarti URL bukan Web App yang benar, atau akses deployment bukan "Anyone".'); er.raw = t.slice(0, 200); throw er; } })
+      .catch(function (e) { if (e && e.raw !== undefined) throw e; var er = new Error('Tidak bisa menghubungi server. Periksa sinyal, URL, dan pastikan akses deployment "Anyone".'); throw er; });
+  }
+
+  function busy(on) { $('ping').disabled = on; $('data').disabled = on; }
+
+  $('ping').addEventListener('click', function () {
+    busy(true); show('Memeriksa…');
+    Promise.resolve().then(function () { return post({ action: 'ping' }); }).then(function (d) {
+      if (d && d.ok && d.v) show('<b class="ok">Server menjawab: versi ' + d.v + '</b>\nWeb App sudah memakai Code.gs terbaru, jadi tombol Ubah bisa dipakai.');
+      else if (d && d.error === 'auth') show('<b class="bad">Kode rahasia ditolak.</b>\nPastikan TOKEN di Code.gs sama persis dengan yang dipakai aplikasi.');
+      else show('<b class="bad">Server versi lama.</b>\nJawaban: <code>' + String(d && d.error || JSON.stringify(d)) + '</code>\nIni penyebab pesan "aksi tidak dikenal" saat menekan Ubah. Perbarui deployment (New version), bukan membuat deployment baru.');
+    }).catch(function (e) { show('<b class="bad">Gagal.</b>\n' + e.message); }).then(function () { busy(false); });
+  });
+
+  $('data').addEventListener('click', function () {
+    busy(true); show('Memuat…');
+    Promise.resolve().then(function () { return post({ action: 'data', month: '' }); }).then(function (d) {
+      if (d && d.ok) {
+        var n = (d.recent || []).length;
+        show('<b class="ok">Data terbaca.</b>\nBulan ' + d.label + ' · ' + n + ' catatan · ' + (d.kpi ? d.kpi.count : 0) + ' transaksi.\nKolom wajib (termasuk <code>Submission ID</code>) ada.');
+      } else if (d && d.error === 'auth') show('<b class="bad">Kode rahasia ditolak.</b>');
+      else show('<b class="bad">Server menolak.</b>\n<code>' + String(d && d.error || JSON.stringify(d)) + '</code>');
+    }).catch(function (e) { show('<b class="bad">Gagal.</b>\n' + e.message); }).then(function () { busy(false); });
+  });
+})();
+</script>
+</body>
+</html>
